@@ -103,4 +103,6 @@ Properties (Properties are “named Game objects”).
 
 ```
 # Contributing
+
 Send a pull request! Open an issue! Whatever you do -- do something! The BGE was too good to let die and Ketsji is too good to let stagnate!
+
