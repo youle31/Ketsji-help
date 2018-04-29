@@ -35,7 +35,7 @@
 
 #include "DNA_genfile.h"
 #include "DNA_material_types.h"
-#include "DNA_object_force.h"
+#include "DNA_object_force_types.h"
 #include "DNA_object_types.h"
 #include "DNA_camera_types.h"
 #include "DNA_sdna_types.h"

@@ -330,7 +330,7 @@ static int node_resize_area_default(bNode *node, int x, int y)
 
 static void node_draw_buttons_group(uiLayout *layout, bContext *C, PointerRNA *ptr)
 {
-	uiTemplateIDBrowse(layout, C, ptr, "node_tree", NULL, NULL, NULL);
+	uiTemplateIDBrowse(layout, C, ptr, "node_tree", NULL, NULL, NULL, UI_TEMPLATE_ID_FILTER_ALL);
 }
 
 /* XXX Does a bounding box update by iterating over all children.
@@ -690,7 +690,8 @@ static void node_common_set_butfunc(bNodeType *ntype)
 /* ****************** BUTTON CALLBACKS FOR SHADER NODES ***************** */
 
 static void node_buts_image_user(uiLayout *layout, bContext *C, PointerRNA *ptr,
-                                 PointerRNA *imaptr, PointerRNA *iuserptr)
+                                 PointerRNA *imaptr, PointerRNA *iuserptr,
+                                 bool compositor)
 {
 	uiLayout *col;
 	int source;
@@ -725,7 +726,8 @@ static void node_buts_image_user(uiLayout *layout, bContext *C, PointerRNA *ptr,
 		uiItemR(col, ptr, "use_auto_refresh", 0, NULL, ICON_NONE);
 	}
 
-	if (RNA_enum_get(imaptr, "type") == IMA_TYPE_MULTILAYER &&
+	if (compositor &&
+	    RNA_enum_get(imaptr, "type") == IMA_TYPE_MULTILAYER &&
 	    RNA_boolean_get(ptr, "has_layers"))
 	{
 		col = uiLayoutColumn(layout, false);
@@ -738,7 +740,7 @@ static void node_shader_buts_material(uiLayout *layout, bContext *C, PointerRNA 
 	bNode *node = ptr->data;
 	uiLayout *col;
 	
-	uiTemplateID(layout, C, ptr, "material", "MATERIAL_OT_new", NULL, NULL);
+	uiTemplateID(layout, C, ptr, "material", "MATERIAL_OT_new", NULL, NULL, UI_TEMPLATE_ID_FILTER_ALL);
 	
 	if (!node->id) return;
 	
@@ -835,7 +837,7 @@ static void node_shader_buts_tex_image(uiLayout *layout, bContext *C, PointerRNA
 	PointerRNA iuserptr = RNA_pointer_get(ptr, "image_user");
 
 	uiLayoutSetContextPointer(layout, "image_user", &iuserptr);
-	uiTemplateID(layout, C, ptr, "image", NULL, "IMAGE_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "image", NULL, "IMAGE_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 	uiItemR(layout, ptr, "color_space", 0, "", ICON_NONE);
 	uiItemR(layout, ptr, "interpolation", 0, "", ICON_NONE);
 	uiItemR(layout, ptr, "projection", 0, "", ICON_NONE);
@@ -849,7 +851,7 @@ static void node_shader_buts_tex_image(uiLayout *layout, bContext *C, PointerRNA
 	/* note: image user properties used directly here, unlike compositor image node,
 	 * which redefines them in the node struct RNA to get proper updates.
 	 */
-	node_buts_image_user(layout, C, &iuserptr, &imaptr, &iuserptr);
+	node_buts_image_user(layout, C, &iuserptr, &imaptr, &iuserptr, false);
 }
 
 static void node_shader_buts_tex_image_ex(uiLayout *layout, bContext *C, PointerRNA *ptr)
@@ -864,9 +866,11 @@ static void node_shader_buts_tex_environment(uiLayout *layout, bContext *C, Poin
 	PointerRNA iuserptr = RNA_pointer_get(ptr, "image_user");
 
 	uiLayoutSetContextPointer(layout, "image_user", &iuserptr);
-	uiTemplateID(layout, C, ptr, "image", NULL, "IMAGE_OT_open", NULL);
+	uiTemplateID(
+	        layout, C, ptr, "image",
+	        NULL, "IMAGE_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
-	node_buts_image_user(layout, C, &iuserptr, &imaptr, &iuserptr);
+	node_buts_image_user(layout, C, &iuserptr, &imaptr, &iuserptr, false);
 
 	uiItemR(layout, ptr, "color_space", 0, "", ICON_NONE);
 	uiItemR(layout, ptr, "interpolation", 0, "", ICON_NONE);
@@ -880,7 +884,9 @@ static void node_shader_buts_tex_environment_ex(uiLayout *layout, bContext *C, P
 	Image *ima = imaptr.data;
 
 	uiLayoutSetContextPointer(layout, "image_user", &iuserptr);
-	uiTemplateID(layout, C, ptr, "image", ima ? NULL : "IMAGE_OT_new", "IMAGE_OT_open", NULL);
+	uiTemplateID(
+	        layout, C, ptr, "image",
+	        ima ? NULL : "IMAGE_OT_new", "IMAGE_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	if (!ima)
 		return;
@@ -1037,7 +1043,7 @@ static void node_shader_buts_normal_map(uiLayout *layout, bContext *C, PointerRN
 {
 	uiItemR(layout, ptr, "space", 0, "", 0);
 
-	if (RNA_enum_get(ptr, "space") == SHD_NORMAL_MAP_TANGENT) {
+	if (RNA_enum_get(ptr, "space") == SHD_SPACE_TANGENT) {
 		PointerRNA obptr = CTX_data_pointer_get(C, "active_object");
 
 		if (obptr.data && RNA_enum_get(&obptr, "type") == OB_MESH) {
@@ -1047,6 +1053,11 @@ static void node_shader_buts_normal_map(uiLayout *layout, bContext *C, PointerRN
 		else
 			uiItemR(layout, ptr, "uv_map", 0, "", 0);
 	}
+}
+
+static void node_shader_buts_displacement(uiLayout *layout, bContext *UNUSED(C), PointerRNA *ptr)
+{
+	uiItemR(layout, ptr, "space", 0, "", 0);
 }
 
 static void node_shader_buts_tangent(uiLayout *layout, bContext *C, PointerRNA *ptr)
@@ -1076,6 +1087,12 @@ static void node_shader_buts_tangent(uiLayout *layout, bContext *C, PointerRNA *
 static void node_shader_buts_glossy(uiLayout *layout, bContext *UNUSED(C), PointerRNA *ptr)
 {
 	uiItemR(layout, ptr, "distribution", 0, "", ICON_NONE);
+}
+
+static void node_shader_buts_principled(uiLayout *layout, bContext *UNUSED(C), PointerRNA *ptr)
+{
+	uiItemR(layout, ptr, "distribution", 0, "", ICON_NONE);
+	uiItemR(layout, ptr, "subsurface_method", 0, "", ICON_NONE);
 }
 
 static void node_shader_buts_anisotropic(uiLayout *layout, bContext *UNUSED(C), PointerRNA *ptr)
@@ -1243,14 +1260,20 @@ static void node_shader_set_butfunc(bNodeType *ntype)
 		case SH_NODE_NORMAL_MAP:
 			ntype->draw_buttons = node_shader_buts_normal_map;
 			break;
+		case SH_NODE_DISPLACEMENT:
+		case SH_NODE_VECTOR_DISPLACEMENT:
+			ntype->draw_buttons = node_shader_buts_displacement;
+			break;
 		case SH_NODE_TANGENT:
 			ntype->draw_buttons = node_shader_buts_tangent;
 			break;
 		case SH_NODE_BSDF_GLOSSY:
 		case SH_NODE_BSDF_GLASS:
 		case SH_NODE_BSDF_REFRACTION:
-		case SH_NODE_BSDF_PRINCIPLED:
 			ntype->draw_buttons = node_shader_buts_glossy;
+			break;
+		case SH_NODE_BSDF_PRINCIPLED:
+			ntype->draw_buttons = node_shader_buts_principled;
 			break;
 		case SH_NODE_BSDF_ANISOTROPIC:
 			ntype->draw_buttons = node_shader_buts_anisotropic;
@@ -1310,12 +1333,14 @@ static void node_composit_buts_image(uiLayout *layout, bContext *C, PointerRNA *
 	
 	RNA_pointer_create((ID *)ptr->id.data, &RNA_ImageUser, node->storage, &iuserptr);
 	uiLayoutSetContextPointer(layout, "image_user", &iuserptr);
-	uiTemplateID(layout, C, ptr, "image", NULL, "IMAGE_OT_open", NULL);
+	uiTemplateID(
+	        layout, C, ptr, "image",
+	        NULL, "IMAGE_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 	if (!node->id) return;
 	
 	imaptr = RNA_pointer_get(ptr, "image");
 
-	node_buts_image_user(layout, C, ptr, &imaptr, &iuserptr);
+	node_buts_image_user(layout, C, ptr, &imaptr, &iuserptr, true);
 
 	node_buts_image_views(layout, C, ptr, &imaptr);
 }
@@ -1340,7 +1365,7 @@ static void node_composit_buts_renderlayers(uiLayout *layout, bContext *C, Point
 	const char *layer_name;
 	char scene_name[MAX_ID_NAME - 2];
 
-	uiTemplateID(layout, C, ptr, "scene", NULL, NULL, NULL);
+	uiTemplateID(layout, C, ptr, "scene", NULL, NULL, NULL, UI_TEMPLATE_ID_FILTER_ALL);
 	
 	if (!node->id) return;
 
@@ -1454,7 +1479,7 @@ static void node_composit_buts_defocus(uiLayout *layout, bContext *C, PointerRNA
 	col = uiLayoutColumn(layout, false);
 	uiItemR(col, ptr, "use_preview", 0, NULL, ICON_NONE);
 
-	uiTemplateID(layout, C, ptr, "scene", NULL, NULL, NULL);
+	uiTemplateID(layout, C, ptr, "scene", NULL, NULL, NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	col = uiLayoutColumn(layout, false);
 	uiItemR(col, ptr, "use_zbuffer", 0, NULL, ICON_NONE);
@@ -2021,7 +2046,7 @@ static void node_composit_buts_ycc(uiLayout *layout, bContext *UNUSED(C), Pointe
 
 static void node_composit_buts_movieclip(uiLayout *layout, bContext *C, PointerRNA *ptr)
 {
-	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 }
 
 static void node_composit_buts_movieclip_ex(uiLayout *layout, bContext *C, PointerRNA *ptr)
@@ -2029,7 +2054,7 @@ static void node_composit_buts_movieclip_ex(uiLayout *layout, bContext *C, Point
 	bNode *node = ptr->data;
 	PointerRNA clipptr;
 
-	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	if (!node->id)
 		return;
@@ -2043,7 +2068,7 @@ static void node_composit_buts_stabilize2d(uiLayout *layout, bContext *C, Pointe
 {
 	bNode *node = ptr->data;
 
-	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	if (!node->id)
 		return;
@@ -2067,7 +2092,7 @@ static void node_composit_buts_moviedistortion(uiLayout *layout, bContext *C, Po
 {
 	bNode *node = ptr->data;
 
-	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	if (!node->id)
 		return;
@@ -2357,7 +2382,7 @@ static void node_composit_buts_mask(uiLayout *layout, bContext *C, PointerRNA *p
 {
 	bNode *node = ptr->data;
 
-	uiTemplateID(layout, C, ptr, "mask", NULL, NULL, NULL);
+	uiTemplateID(layout, C, ptr, "mask", NULL, NULL, NULL, UI_TEMPLATE_ID_FILTER_ALL);
 	uiItemR(layout, ptr, "use_antialiasing", 0, NULL, ICON_NONE);
 	uiItemR(layout, ptr, "use_feather", 0, NULL, ICON_NONE);
 
@@ -2379,7 +2404,7 @@ static void node_composit_buts_keyingscreen(uiLayout *layout, bContext *C, Point
 {
 	bNode *node = ptr->data;
 
-	uiTemplateID(layout, C, ptr, "clip", NULL, NULL, NULL);
+	uiTemplateID(layout, C, ptr, "clip", NULL, NULL, NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	if (node->id) {
 		MovieClip *clip = (MovieClip *) node->id;
@@ -2415,7 +2440,7 @@ static void node_composit_buts_trackpos(uiLayout *layout, bContext *C, PointerRN
 {
 	bNode *node = ptr->data;
 
-	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	if (node->id) {
 		MovieClip *clip = (MovieClip *) node->id;
@@ -2455,7 +2480,7 @@ static void node_composit_buts_planetrackdeform(uiLayout *layout, bContext *C, P
 	bNode *node = ptr->data;
 	NodePlaneTrackDeformData *data = node->storage;
 
-	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "clip", NULL, "CLIP_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 
 	if (node->id) {
 		MovieClip *clip = (MovieClip *) node->id;
@@ -2833,7 +2858,7 @@ static void node_texture_buts_proc(uiLayout *layout, bContext *UNUSED(C), Pointe
 
 static void node_texture_buts_image(uiLayout *layout, bContext *C, PointerRNA *ptr)
 {
-	uiTemplateID(layout, C, ptr, "image", NULL, "IMAGE_OT_open", NULL);
+	uiTemplateID(layout, C, ptr, "image", NULL, "IMAGE_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
 }
 
 static void node_texture_buts_image_ex(uiLayout *layout, bContext *C, PointerRNA *ptr)
@@ -3033,7 +3058,7 @@ static const float std_node_socket_colors[][4] = {
 	{0.70, 0.65, 0.19, 1.0},    /* SOCK_BOOLEAN */
 	{0.0, 0.0, 0.0, 1.0},       /*__SOCK_MESH (deprecated) */
 	{0.06, 0.52, 0.15, 1.0},    /* SOCK_INT */
-	{1.0, 1.0, 1.0, 1.0},       /* SOCK_STRING */
+	{0.39, 0.39, 0.39, 1.0},    /* SOCK_STRING */
 };
 
 /* common color callbacks for standard types */
@@ -3120,20 +3145,11 @@ static void std_node_socket_draw(bContext *C, uiLayout *layout, PointerRNA *ptr,
 			uiTemplateComponentMenu(layout, ptr, "default_value", text);
 			break;
 		case SOCK_RGBA:
-		{
-			uiLayout *row = uiLayoutRow(layout, false);
-			uiLayoutSetAlignment(row, UI_LAYOUT_ALIGN_LEFT);
-			/* draw the socket name right of the actual button */
-			uiItemR(row, ptr, "default_value", 0, "", 0);
-			uiItemL(row, text, 0);
-			break;
-		}
 		case SOCK_STRING:
 		{
-			uiLayout *row = uiLayoutRow(layout, true);
-			/* draw the socket name right of the actual button */
-			uiItemR(row, ptr, "default_value", 0, "", 0);
+			uiLayout *row = uiLayoutSplit(layout, 0.5f, false);
 			uiItemL(row, text, 0);
+			uiItemR(row, ptr, "default_value", 0, "", 0);
 			break;
 		}
 		default:
@@ -3167,11 +3183,6 @@ static void std_node_socket_interface_draw(bContext *UNUSED(C), uiLayout *layout
 			uiItemR(row, ptr, "max_value", 0, IFACE_("Max"), 0);
 			break;
 		}
-		case SOCK_BOOLEAN:
-		{
-			uiItemR(layout, ptr, "default_value", 0, NULL, 0);
-			break;
-		}
 		case SOCK_VECTOR:
 		{
 			uiLayout *row;
@@ -3181,11 +3192,8 @@ static void std_node_socket_interface_draw(bContext *UNUSED(C), uiLayout *layout
 			uiItemR(row, ptr, "max_value", 0, IFACE_("Max"), 0);
 			break;
 		}
+		case SOCK_BOOLEAN:
 		case SOCK_RGBA:
-		{
-			uiItemR(layout, ptr, "default_value", 0, NULL, 0);
-			break;
-		}
 		case SOCK_STRING:
 		{
 			uiItemR(layout, ptr, "default_value", 0, NULL, 0);

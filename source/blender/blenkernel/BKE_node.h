@@ -446,6 +446,7 @@ struct bNodeSocket *nodeInsertStaticSocket(struct bNodeTree *ntree, struct bNode
                                            struct bNodeSocket *next_sock, const char *identifier, const char *name);
 void nodeRemoveSocket(struct bNodeTree *ntree, struct bNode *node, struct bNodeSocket *sock);
 void nodeRemoveAllSockets(struct bNodeTree *ntree, struct bNode *node);
+void nodeModifySocketType(struct bNodeTree *ntree, struct bNode *node, struct bNodeSocket *sock, int type, int subtype);
 
 struct bNode	*nodeAddNode(const struct bContext *C, struct bNodeTree *ntree, const char *idname);
 struct bNode	*nodeAddStaticNode(const struct bContext *C, struct bNodeTree *ntree, int type);
@@ -512,7 +513,7 @@ int                    BKE_node_clipboard_get_type(void);
 
 /* Node Instance Hash */
 typedef struct bNodeInstanceHash {
-	 GHash *ghash;	/* XXX should be made a direct member, GHash allocation needs to support it */
+	GHash *ghash;	/* XXX should be made a direct member, GHash allocation needs to support it */
 } bNodeInstanceHash;
 
 typedef void (*bNodeInstanceValueFP)(void *value);
@@ -572,7 +573,6 @@ void            BKE_node_preview_set_pixel(struct bNodePreview *preview, const f
 
 /** \} */
 
-
 /* -------------------------------------------------------------------- */
 /** \name Node Type Access
  * \{ */
@@ -602,6 +602,7 @@ void            node_type_gpu(struct bNodeType *ntype, NodeGPUExecFunction gpufu
 void            node_type_internal_links(struct bNodeType *ntype, void (*update_internal_links)(struct bNodeTree *, struct bNode *));
 void            node_type_compatibility(struct bNodeType *ntype, short compatibility);
 
+/** \} */
 
 /* -------------------------------------------------------------------- */
 /** \name Node Generic Functions
@@ -691,7 +692,7 @@ bool BKE_node_tree_iter_step(struct NodeTreeIterStore *ntreeiter,
 
 /* -------------------------------------------------------------------- */
 /** \name Shader Nodes
- */
+ * \{ */
 struct ShadeInput;
 struct ShadeResult;
 
@@ -792,6 +793,9 @@ struct ShadeResult;
 #define SH_NODE_TIME			195
 #define SH_NODE_PARALLAX		196
 #define SH_NODE_BEVEL                   197
+#define SH_NODE_DISPLACEMENT            198
+#define SH_NODE_VECTOR_DISPLACEMENT     199
+#define SH_NODE_VOLUME_PRINCIPLED       200
 
 /* custom defines options for Material node */
 #define SH_NODE_MAT_DIFF   1
@@ -815,7 +819,7 @@ void            ntreeGPUMaterialNodes(struct bNodeTree *ntree, struct GPUMateria
 
 /* -------------------------------------------------------------------- */
 /** \name Composite Nodes
- */
+ * \{ */
 
 /* output socket defines */
 #define RRES_OUT_IMAGE					0
@@ -999,7 +1003,7 @@ void ntreeCompositColorBalanceSyncFromCDL(bNodeTree *ntree, bNode *node);
 
 /* -------------------------------------------------------------------- */
 /** \name Texture Nodes
- */
+ * \{ */
 
 struct TexResult;
 

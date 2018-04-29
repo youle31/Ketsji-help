@@ -277,8 +277,9 @@ IDProperty *RNA_struct_idprops(PointerRNA *ptr, bool create)
 {
 	StructRNA *type = ptr->type;
 
-	if (type && type->idproperties)
+	if (type && type->idproperties) {
 		return type->idproperties(ptr, create);
+	}
 	
 	return NULL;
 }
@@ -292,8 +293,16 @@ static IDProperty *rna_idproperty_find(PointerRNA *ptr, const char *name)
 {
 	IDProperty *group = RNA_struct_idprops(ptr, 0);
 
-	if (group)
-		return IDP_GetPropertyFromGroup(group, name);
+	if (group) {
+		if (group->type == IDP_GROUP) {
+			return IDP_GetPropertyFromGroup(group, name);
+		}
+		else {
+			/* Not sure why that happens sometimes, with nested properties... */
+			/* Seems to be actually array prop, name is usually "0"... To be sorted out later. */
+//			printf("Got unexpected IDProp container when trying to retrieve %s: %d\n", name, group->type);
+		}
+	}
 
 	return NULL;
 }
@@ -772,7 +781,7 @@ FunctionRNA *RNA_struct_find_function(StructRNA *srna, const char *identifier)
 	}
 	return NULL;
 
-	/* funcitonal but slow */
+	/* functional but slow */
 #else
 	PointerRNA tptr;
 	PropertyRNA *iterprop;
@@ -1842,14 +1851,14 @@ bool RNA_property_editable_info(PointerRNA *ptr, PropertyRNA *prop, const char *
 	else {
 		flag = prop->flag;
 		if ((flag & PROP_EDITABLE) == 0 || (flag & PROP_REGISTER)) {
-			*r_info = "This property is for internal use only and can't be edited.";
+			*r_info = N_("This property is for internal use only and can't be edited");
 		}
 	}
 
 	/* property from linked data-block */
 	if (id && ID_IS_LINKED(id) && (prop->flag & PROP_LIB_EXCEPTION) == 0) {
 		if (!(*r_info)[0]) {
-			*r_info = "Can't edit this property from a linked data-block.";
+			*r_info = N_("Can't edit this property from a linked data-block");
 		}
 		return false;
 	}
@@ -3001,6 +3010,42 @@ void RNA_property_string_set(PointerRNA *ptr, PropertyRNA *prop, const char *val
 		group = RNA_struct_idprops(ptr, 1);
 		if (group)
 			IDP_AddToGroup(group, IDP_NewString(value, prop->identifier, RNA_property_string_maxlength(prop)));
+	}
+}
+
+void RNA_property_string_set_bytes(PointerRNA *ptr, PropertyRNA *prop, const char *value, int len)
+{
+	StringPropertyRNA *sprop = (StringPropertyRNA *)prop;
+	IDProperty *idprop;
+
+	BLI_assert(RNA_property_type(prop) == PROP_STRING);
+	BLI_assert(RNA_property_subtype(prop) == PROP_BYTESTRING);
+
+	if ((idprop = rna_idproperty_check(&prop, ptr))) {
+		IDP_ResizeArray(idprop, len);
+		memcpy(idprop->data.pointer, value, (size_t)len);
+
+		rna_idproperty_touch(idprop);
+	}
+	else if (sprop->set) {
+		/* XXX, should take length argument (currently not used). */
+		sprop->set(ptr, value);  /* set function needs to clamp its self */
+	}
+	else if (sprop->set_ex) {
+		/* XXX, should take length argument (currently not used). */
+		sprop->set_ex(ptr, prop, value);  /* set function needs to clamp its self */
+	}
+	else if (prop->flag & PROP_EDITABLE) {
+		IDProperty *group;
+
+		group = RNA_struct_idprops(ptr, 1);
+		if (group) {
+			IDPropertyTemplate val = {0};
+			val.string.str = value;
+			val.string.len = len;
+			val.string.subtype = IDP_STRING_SUB_BYTE;
+			IDP_AddToGroup(group, IDP_New(IDP_STRING, &val, prop->identifier));
+		}
 	}
 }
 
@@ -5745,13 +5790,10 @@ char *RNA_pointer_as_string_id(bContext *C, PointerRNA *ptr)
 
 static char *rna_pointer_as_string__bldata(PointerRNA *ptr)
 {
-	if (ptr->type == NULL) {
+	if (ptr->type == NULL || ptr->id.data == NULL) {
 		return BLI_strdup("None");
 	}
 	else if (RNA_struct_is_ID(ptr->type)) {
-		if (ptr->id.data == NULL) {
-			return BLI_strdup("None");
-		}
 		return RNA_path_full_ID_py(ptr->id.data);
 	}
 	else {

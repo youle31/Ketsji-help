@@ -373,7 +373,7 @@ void BKE_paint_curve_clamp_endpoint_add_index(PaintCurve *pc, const int add_inde
 /* remove colour from palette. Must be certain color is inside the palette! */
 void BKE_palette_color_remove(Palette *palette, PaletteColor *color)
 {
-	if (BLI_listbase_count_ex(&palette->colors, palette->active_color) == palette->active_color) {
+	if (BLI_listbase_count_at_most(&palette->colors, palette->active_color) == palette->active_color) {
 		palette->active_color--;
 	}
 
@@ -496,7 +496,7 @@ void BKE_paint_cavity_curve_preset(Paint *p, int preset)
 	curvemapping_changed(p->cavity_curve, false);
 }
 
-short BKE_paint_object_mode_from_paint_mode(ePaintMode mode)
+eObjectMode BKE_paint_object_mode_from_paint_mode(ePaintMode mode)
 {
 	switch (mode) {
 		case ePaintSculpt:
@@ -526,11 +526,13 @@ void BKE_paint_init(Scene *sce, ePaintMode mode, const char col[3])
 	/* If there's no brush, create one */
 	brush = BKE_paint_brush(paint);
 	if (brush == NULL) {
-		short ob_mode = BKE_paint_object_mode_from_paint_mode(mode);
+		eObjectMode ob_mode = BKE_paint_object_mode_from_paint_mode(mode);
 		brush = BKE_brush_first_search(G.main, ob_mode);
 
-		if (!brush)
+		if (!brush) {
 			brush = BKE_brush_add(G.main, "Brush", ob_mode);
+			id_us_min(&brush->id);  /* fake user only */
+		}
 		BKE_paint_brush_set(paint, brush);
 	}
 
@@ -882,6 +884,7 @@ void BKE_sculpt_update_mesh_elements(Scene *scene, Sculpt *sd, Object *ob,
 
 	ss->modifiers_active = sculpt_modifiers_active(scene, sd, ob);
 	ss->show_diffuse_color = (sd->flags & SCULPT_SHOW_DIFFUSE) != 0;
+	ss->show_mask = (sd->flags & SCULPT_HIDE_MASK) == 0;
 
 	ss->building_vp_handle = false;
 
@@ -895,7 +898,7 @@ void BKE_sculpt_update_mesh_elements(Scene *scene, Sculpt *sd, Object *ob,
 			if (!CustomData_has_layer(&me->ldata, CD_GRID_PAINT_MASK)) {
 #if 1
 				BKE_sculpt_mask_layers_ensure(ob, mmd);
-#else				/* if we wanted to support adding mask data while multi-res painting, we would need to do this */
+#else			/* if we wanted to support adding mask data while multi-res painting, we would need to do this */
 				if ((ED_sculpt_mask_layers_ensure(ob, mmd) & ED_SCULPT_MASK_LAYER_CALC_LOOP)) {
 					/* remake the derived mesh */
 					ob->recalc |= OB_RECALC_DATA;
@@ -936,6 +939,7 @@ void BKE_sculpt_update_mesh_elements(Scene *scene, Sculpt *sd, Object *ob,
 	ss->pmap = (need_pmap && dm->getPolyMap) ? dm->getPolyMap(ob, dm) : NULL;
 
 	pbvh_show_diffuse_color_set(ss->pbvh, ss->show_diffuse_color);
+	pbvh_show_mask_set(ss->pbvh, ss->show_mask);
 
 	if (ss->modifiers_active) {
 		if (!ss->orig_cos) {
@@ -1052,4 +1056,40 @@ int BKE_sculpt_mask_layers_ensure(Object *ob, MultiresModifierData *mmd)
 	}
 
 	return ret;
+}
+
+void BKE_sculpt_toolsettings_data_ensure(struct Scene *scene)
+{
+	Sculpt *sd = scene->toolsettings->sculpt;
+	if (sd == NULL) {
+		sd = scene->toolsettings->sculpt = MEM_callocN(sizeof(Sculpt), __func__);
+
+		/* Turn on X plane mirror symmetry by default */
+		sd->paint.symmetry_flags |= PAINT_SYMM_X;
+		sd->paint.flags |= PAINT_SHOW_BRUSH;
+
+		/* Make sure at least dyntopo subdivision is enabled */
+		sd->flags |= SCULPT_DYNTOPO_SUBDIVIDE | SCULPT_DYNTOPO_COLLAPSE;
+	}
+
+	if (!sd->detail_size) {
+		sd->detail_size = 12;
+	}
+	if (!sd->detail_percent) {
+		sd->detail_percent = 25;
+	}
+	if (sd->constant_detail == 0.0f) {
+		sd->constant_detail = 3.0f;
+	}
+
+	/* Set sane default tiling offsets */
+	if (!sd->paint.tile_offset[0]) {
+		sd->paint.tile_offset[0] = 1.0f;
+	}
+	if (!sd->paint.tile_offset[1]) {
+		sd->paint.tile_offset[1] = 1.0f;
+	}
+	if (!sd->paint.tile_offset[2]) {
+		sd->paint.tile_offset[2] = 1.0f;
+	}
 }

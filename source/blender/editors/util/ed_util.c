@@ -58,6 +58,7 @@
 #include "BKE_packedFile.h"
 #include "BKE_paint.h"
 #include "BKE_screen.h"
+#include "BKE_undo_system.h"
 
 #include "ED_armature.h"
 #include "ED_buttons.h"
@@ -89,6 +90,10 @@ void ED_editors_init(bContext *C)
 	Object *ob, *obact = (sce && sce->basact) ? sce->basact->object : NULL;
 	ID *data;
 
+	if (wm->undo_stack == NULL) {
+		wm->undo_stack = BKE_undosys_stack_create();
+	}
+
 	/* This is called during initialization, so we don't want to store any reports */
 	ReportList *reports = CTX_wm_reports(C);
 	int reports_flag_prev = reports->flag & ~RPT_STORE;
@@ -106,7 +111,7 @@ void ED_editors_init(bContext *C)
 			data = ob->data;
 
 			if (ob == obact && !ID_IS_LINKED(ob) && !(data && ID_IS_LINKED(data)))
-				ED_object_toggle_modes(C, mode);
+				ED_object_mode_toggle(C, mode);
 		}
 	}
 
@@ -128,9 +133,15 @@ void ED_editors_exit(bContext *C)
 		return;
 	
 	/* frees all editmode undos */
-	undo_editmode_clear();
-	ED_undo_paint_free();
-	
+	if (G.main->wm.first) {
+		wmWindowManager *wm = G.main->wm.first;
+		/* normally we don't check for NULL undo stack, do here since it may run in different context. */
+		if (wm->undo_stack) {
+			BKE_undosys_stack_destroy(wm->undo_stack);
+			wm->undo_stack = NULL;
+		}
+	}
+
 	for (sce = bmain->scene.first; sce; sce = sce->id.next) {
 		if (sce->obedit) {
 			Object *ob = sce->obedit;
@@ -169,18 +180,22 @@ bool ED_editors_flush_edits(const bContext *C, bool for_render)
 	 * objects can exist at the same time */
 	for (ob = bmain->object.first; ob; ob = ob->id.next) {
 		if (ob->mode & OB_MODE_SCULPT) {
-			/* flush multires changes (for sculpt) */
-			multires_force_update(ob);
-			has_edited = true;
+			/* Don't allow flushing while in the middle of a stroke (frees data in use).
+			 * Auto-save prevents this from happening but scripts may cause a flush on saving: T53986. */
+			if ((ob->sculpt && ob->sculpt->cache) == 0) {
+				/* flush multires changes (for sculpt) */
+				multires_force_update(ob);
+				has_edited = true;
 
-			if (for_render) {
-				/* flush changes from dynamic topology sculpt */
-				BKE_sculptsession_bm_to_me_for_render(ob);
-			}
-			else {
-				/* Set reorder=false so that saving the file doesn't reorder
-				 * the BMesh's elements */
-				BKE_sculptsession_bm_to_me(ob, false);
+				if (for_render) {
+					/* flush changes from dynamic topology sculpt */
+					BKE_sculptsession_bm_to_me_for_render(ob);
+				}
+				else {
+					/* Set reorder=false so that saving the file doesn't reorder
+					 * the BMesh's elements */
+					BKE_sculptsession_bm_to_me(ob, false);
+				}
 			}
 		}
 		else if (ob->mode & OB_MODE_EDIT) {

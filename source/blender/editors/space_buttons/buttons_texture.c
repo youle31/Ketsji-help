@@ -45,7 +45,7 @@
 #include "DNA_material_types.h"
 #include "DNA_node_types.h"
 #include "DNA_object_types.h"
-#include "DNA_object_force.h"
+#include "DNA_object_force_types.h"
 #include "DNA_particle_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
@@ -470,7 +470,7 @@ void buttons_texture_context_compute(const bContext *C, SpaceButs *sbuts)
 	}
 	else {
 		/* set one user as active based on active index */
-		if (ct->index >= BLI_listbase_count_ex(&ct->users, ct->index + 1))
+		if (ct->index >= BLI_listbase_count_at_most(&ct->users, ct->index + 1))
 			ct->index = 0;
 
 		ct->user = BLI_findlink(&ct->users, ct->index);

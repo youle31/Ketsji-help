@@ -418,7 +418,7 @@ function(setup_liblinks
 			target_link_libraries(${target} ${OPENSUBDIV_LIBRARIES})
 	endif()
 	if(WITH_OPENVDB)
-		target_link_libraries(${target} ${OPENVDB_LIBRARIES} ${TBB_LIBRARIES})
+		target_link_libraries(${target} ${OPENVDB_LIBRARIES} ${TBB_LIBRARIES} ${BLOSC_LIBRARIES})
 	endif()
 	if(WITH_CYCLES_OSL)
 		target_link_libraries(${target} ${OSL_LIBRARIES})
@@ -552,6 +552,8 @@ function(SETUP_BLENDER_SORTED_LIBS)
 	set(BLENDER_SORTED_LIBS
 		bf_windowmanager
 
+		bf_editor_undo
+
 		bf_editor_space_api
 		bf_editor_space_action
 		bf_editor_space_buttons
@@ -581,6 +583,7 @@ function(SETUP_BLENDER_SORTED_LIBS)
 		bf_editor_mesh
 		bf_editor_metaball
 		bf_editor_object
+		bf_editor_lattice
 		bf_editor_armature
 		bf_editor_physics
 		bf_editor_render
@@ -648,6 +651,7 @@ function(SETUP_BLENDER_SORTED_LIBS)
 		bf_intern_elbeem
 		bf_intern_memutil
 		bf_intern_guardedalloc
+		bf_intern_clog
 		bf_intern_ctr
 		bf_intern_utfconv
 		bf_intern_smoke
@@ -809,7 +813,7 @@ macro(TEST_SSE_SUPPORT
 		endif()
 	elseif(CMAKE_C_COMPILER_ID MATCHES "Intel")
 		set(${_sse_flags} "")  # icc defaults to -msse
-		set(${_sse2_flags} "-msse2")
+		set(${_sse2_flags} "")  # icc defaults to -msse2
 	else()
 		message(WARNING "SSE flags for this compiler: '${CMAKE_C_COMPILER_ID}' not known")
 		set(${_sse_flags})
@@ -1135,7 +1139,9 @@ endmacro()
 
 # External libs may need 'signed char' to be default.
 macro(remove_cc_flag_unsigned_char)
-	if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|Intel)$")
+	if(CMAKE_COMPILER_IS_GNUCC OR
+	   (CMAKE_C_COMPILER_ID MATCHES "Clang") OR
+	   (CMAKE_C_COMPILER_ID MATCHES "Intel"))
 		remove_cc_flag("-funsigned-char")
 	elseif(MSVC)
 		remove_cc_flag("/J")
@@ -1381,7 +1387,7 @@ endfunction()
 
 # macro for converting pixmap directory to a png and then a c file
 function(data_to_c_simple_icons
-	path_from
+	path_from icon_prefix icon_names
 	list_to_add
 	)
 
@@ -1399,8 +1405,11 @@ function(data_to_c_simple_icons
 
 	get_filename_component(_file_to_path ${_file_to} PATH)
 
-	# ideally we wouldn't glob, but storing all names for all pixmaps is a bit heavy
-	file(GLOB _icon_files "${path_from}/*.dat")
+	# Construct a list of absolute paths from input
+	set(_icon_files)
+	foreach(_var ${icon_names})
+		list(APPEND _icon_files "${_path_from_abs}/${icon_prefix}${_var}.dat")
+	endforeach()
 
 	add_custom_command(
 		OUTPUT  ${_file_from} ${_file_to}
@@ -1562,7 +1571,7 @@ macro(openmp_delayload
 		endif()
 endmacro()
 
-MACRO(WINDOWS_SIGN_TARGET target)
+macro(WINDOWS_SIGN_TARGET target)
 	if(WITH_WINDOWS_CODESIGN)
 		if(!SIGNTOOL_EXE)
 			error("Codesigning is enabled, but signtool is not found")
@@ -1583,4 +1592,4 @@ MACRO(WINDOWS_SIGN_TARGET target)
 			)
 		endif()
 	endif()
-ENDMACRO()
+endmacro()

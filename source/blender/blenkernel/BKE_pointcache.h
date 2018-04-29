@@ -34,7 +34,7 @@
 
 #include "DNA_ID.h"
 #include "DNA_dynamicpaint_types.h"
-#include "DNA_object_force.h"
+#include "DNA_object_force_types.h"
 #include "DNA_boid_types.h"
 #include <stdio.h> /* for FILE */
 
@@ -140,7 +140,7 @@ typedef struct PTCacheID {
 	unsigned int default_step;
 	unsigned int max_step;
 
-	/* flags defined in DNA_object_force.h */
+	/* flags defined in DNA_object_force_types.h */
 	unsigned int data_types, info_types;
 
 	/* copies point data to cache data */
@@ -227,7 +227,6 @@ typedef struct PTCacheEditPoint {
 } PTCacheEditPoint;
 
 typedef struct PTCacheUndo {
-	struct PTCacheUndo *next, *prev;
 	struct PTCacheEditPoint *points;
 
 	/* particles stuff */
@@ -240,12 +239,11 @@ typedef struct PTCacheUndo {
 	struct ListBase mem_cache;
 
 	int totpoint;
-	char name[64];
+
+	size_t undo_size;
 } PTCacheUndo;
 
 typedef struct PTCacheEdit {
-	ListBase undo;
-	struct PTCacheUndo *curundo;
 	PTCacheEditPoint *points;
 
 	struct PTCacheID pid;

@@ -37,9 +37,11 @@
 #include <errno.h>
 
 #include "DNA_anim_types.h"
+#include "DNA_group_types.h"
 #include "DNA_image_types.h"
 #include "DNA_node_types.h"
 #include "DNA_object_types.h"
+#include "DNA_particle_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_sequence_types.h"
 #include "DNA_userdef_types.h"
@@ -82,6 +84,7 @@
 #include "IMB_colormanagement.h"
 #include "IMB_imbuf.h"
 #include "IMB_imbuf_types.h"
+#include "IMB_metadata.h"
 
 #include "RE_engine.h"
 #include "RE_pipeline.h"
@@ -255,6 +258,11 @@ RenderLayer *RE_GetRenderLayer(RenderResult *rr, const char *name)
 	}
 }
 
+bool RE_HasSingleLayer(Render *re)
+{
+	return (re->r.scemode & R_SINGLE_LAYER);
+}
+
 RenderResult *RE_MultilayerConvert(void *exrhandle, const char *colorspace, bool predivide, int rectx, int recty)
 {
 	return render_result_new_from_exr(exrhandle, colorspace, predivide, rectx, recty);
@@ -262,12 +270,19 @@ RenderResult *RE_MultilayerConvert(void *exrhandle, const char *colorspace, bool
 
 RenderLayer *render_get_active_layer(Render *re, RenderResult *rr)
 {
-	RenderLayer *rl = BLI_findlink(&rr->layers, re->r.actlay);
-	
-	if (rl)
-		return rl;
-	else 
-		return rr->layers.first;
+	SceneRenderLayer *srl = BLI_findlink(&re->r.layers, re->r.actlay);
+
+	if (srl) {
+		RenderLayer *rl = BLI_findstring(&rr->layers,
+		                                 srl->name,
+		                                 offsetof(RenderLayer, name));
+
+		if (rl) {
+			return rl;
+		}
+	}
+
+	return rr->layers.first;
 }
 
 static int render_scene_needs_vector(Render *re)
@@ -436,8 +451,6 @@ void RE_AcquireResultImage(Render *re, RenderResult *rr, const int view_id)
 			rr->rectf = rv->rectf;
 			rr->rectz = rv->rectz;
 			rr->rect32 = rv->rect32;
-
-			rr->have_combined = (rv->rectf != NULL);
 
 			/* active layer */
 			rl = render_get_active_layer(re, re->result);
@@ -839,7 +852,7 @@ void RE_InitState(Render *re, Render *source, RenderData *rd,
 		re->result = MEM_callocN(sizeof(RenderResult), "new render result");
 		re->result->rectx = re->rectx;
 		re->result->recty = re->recty;
-		render_result_view_new(re->result, "new temporary view");
+		render_result_view_new(re->result, "");
 	}
 	
 	if (re->r.scemode & R_VIEWPORT_PREVIEW)
@@ -1407,7 +1420,7 @@ static void threaded_tile_processor(Render *re)
 		BLI_thread_queue_nowait(workqueue);
 		
 		/* start all threads */
-		BLI_init_threads(&threads, do_render_thread, re->r.threads);
+		BLI_threadpool_init(&threads, do_render_thread, re->r.threads);
 		
 		for (a = 0; a < re->r.threads; a++) {
 			thread[a].workqueue = workqueue;
@@ -1423,7 +1436,7 @@ static void threaded_tile_processor(Render *re)
 				thread[a].duh = NULL;
 			}
 
-			BLI_insert_thread(&threads, &thread[a]);
+			BLI_threadpool_insert(&threads, &thread[a]);
 		}
 		
 		/* wait for results to come back */
@@ -1467,7 +1480,7 @@ static void threaded_tile_processor(Render *re)
 			}
 		}
 		
-		BLI_end_threads(&threads);
+		BLI_threadpool_end(&threads);
 		
 		if ((g_break=re->test_break(re->tbh)))
 			break;
@@ -2088,6 +2101,28 @@ static void tag_dependend_objects_for_render(Scene *scene, int renderlay)
 						ShrinkwrapModifierData *smd = (ShrinkwrapModifierData *)md;
 						if (smd->target  && smd->target->type == OB_MESH) {
 							DAG_id_tag_update(&smd->target->id, OB_RECALC_DATA);
+						}
+					}
+					else if (md->type == eModifierType_ParticleSystem) {
+						ParticleSystemModifierData *psmd = (ParticleSystemModifierData *)md;
+						ParticleSystem *psys = psmd->psys;
+						ParticleSettings *part = psys->part;
+						switch (part->ren_as) {
+							case PART_DRAW_OB:
+								if (part->dup_ob != NULL) {
+									DAG_id_tag_update(&part->dup_ob->id, OB_RECALC_DATA);
+								}
+								break;
+							case PART_DRAW_GR:
+								if (part->dup_group != NULL) {
+									for (GroupObject *go = part->dup_group->gobject.first;
+									     go != NULL;
+									     go = go->next)
+									{
+										DAG_id_tag_update(&go->ob->id, OB_RECALC_DATA);
+									}
+								}
+								break;
 						}
 					}
 				}
@@ -3315,8 +3350,9 @@ bool RE_WriteRenderViewsImage(ReportList *reports, RenderResult *rr, Scene *scen
 	if (!rr)
 		return false;
 
-	bool is_mono = BLI_listbase_count_ex(&rr->views, 2) < 2;
-	bool is_exr_rr = ELEM(rd->im_format.imtype, R_IMF_IMTYPE_OPENEXR, R_IMF_IMTYPE_MULTILAYER);
+	bool is_mono = BLI_listbase_count_at_most(&rr->views, 2) < 2;
+	bool is_exr_rr = ELEM(rd->im_format.imtype, R_IMF_IMTYPE_OPENEXR, R_IMF_IMTYPE_MULTILAYER) &&
+	                 RE_HasFloatPixels(rr);
 
 	if (rd->im_format.views_format == R_IMF_VIEWS_MULTIVIEW && is_exr_rr)
 	{
@@ -3431,7 +3467,7 @@ bool RE_WriteRenderViewsMovie(
 	if (!rr)
 		return false;
 
-	is_mono = BLI_listbase_count_ex(&rr->views, 2) < 2;
+	is_mono = BLI_listbase_count_at_most(&rr->views, 2) < 2;
 
 	if (is_mono || (scene->r.im_format.views_format == R_IMF_VIEWS_INDIVIDUAL)) {
 		int view_id;
@@ -4032,7 +4068,7 @@ bool RE_WriteEnvmapResult(struct ReportList *reports, Scene *scene, EnvMap *env,
 /* Used in the interface to decide whether to show layers or passes. */
 bool RE_layers_have_name(struct RenderResult *rr)
 {
-	switch (BLI_listbase_count_ex(&rr->layers, 2)) {
+	switch (BLI_listbase_count_at_most(&rr->layers, 2)) {
 		case 0:
 			return false;
 		case 1:

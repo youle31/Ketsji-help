@@ -123,50 +123,40 @@ typedef struct tJoinArmature_AdtFixData {
 	GHash *names_map;
 } tJoinArmature_AdtFixData;
 
-/* Callback to pass to void BKE_animdata_main_cb() for fixing driver ID's to point to the new ID */
+/* Callback to pass to BKE_animdata_main_cb() for fixing driver ID's to point to the new ID */
 /* FIXME: For now, we only care about drivers here. When editing rigs, it's very rare to have animation
  *        on the rigs being edited already, so it should be safe to skip these.
  */
-static void joined_armature_fix_animdata_cb(ID *id, AnimData *adt, void *user_data)
+static void joined_armature_fix_animdata_cb(ID *id, FCurve *fcu, void *user_data)
 {
 	tJoinArmature_AdtFixData *afd = (tJoinArmature_AdtFixData *)user_data;
 	ID *src_id = &afd->srcArm->id;
 	ID *dst_id = &afd->tarArm->id;
 	
 	GHashIterator gh_iter;
-	FCurve *fcu;
 	
 	/* Fix paths - If this is the target object, it will have some "dirty" paths */
-	if (id == src_id) {
-		/* Fix drivers */
-		for (fcu = adt->drivers.first; fcu; fcu = fcu->next) {
-			/* skip driver if it doesn't affect the bones */
-			if (strstr(fcu->rna_path, "pose.bones[") == NULL) {
-				continue;
-			}
+	if ((id == src_id) && strstr(fcu->rna_path, "pose.bones[")) {
+		GHASH_ITER(gh_iter, afd->names_map) {
+			const char *old_name = BLI_ghashIterator_getKey(&gh_iter);
+			const char *new_name = BLI_ghashIterator_getValue(&gh_iter);
 			
-			// FIXME: this is too crude... it just does everything!
-			GHASH_ITER(gh_iter, afd->names_map) {
-				const char *old_name = BLI_ghashIterator_getKey(&gh_iter);
-				const char *new_name = BLI_ghashIterator_getValue(&gh_iter);
+			/* only remap if changed; this still means there will be some waste if there aren't many drivers/keys */
+			if (!STREQ(old_name, new_name) && strstr(fcu->rna_path, old_name)) {
+				fcu->rna_path = BKE_animsys_fix_rna_path_rename(id, fcu->rna_path, "pose.bones",
+				                                                old_name, new_name, 0, 0, false);
 				
-				/* only remap if changed; this still means there will be some waste if there aren't many drivers/keys */
-				if (!STREQ(old_name, new_name) && strstr(fcu->rna_path, old_name)) {
-					fcu->rna_path = BKE_animsys_fix_rna_path_rename(id, fcu->rna_path, "pose.bones",
-					                                                old_name, new_name, 0, 0, false);
-					
-					/* we don't want to apply a second remapping on this driver now, 
-					 * so stop trying names, but keep fixing drivers
-					 */
-					break;
-				}
+				/* we don't want to apply a second remapping on this driver now, 
+				 * so stop trying names, but keep fixing drivers
+				 */
+				break;
 			}
 		}
 	}
 	
 	
 	/* Driver targets */
-	for (fcu = adt->drivers.first; fcu; fcu = fcu->next) {
+	if (fcu->driver) {
 		ChannelDriver *driver = fcu->driver;
 		DriverVar *dvar;
 		
@@ -319,10 +309,10 @@ int join_armature_exec(bContext *C, wmOperator *op)
 			/* Copy bones and posechannels from the object to the edit armature */
 			for (pchan = opose->chanbase.first; pchan; pchan = pchann) {
 				pchann = pchan->next;
-				curbone = ED_armature_bone_find_name(curarm->edbo, pchan->name);
+				curbone = ED_armature_ebone_find_name(curarm->edbo, pchan->name);
 				
 				/* Get new name */
-				unique_editbone_name(arm->edbo, curbone->name, NULL);
+				ED_armature_ebone_unique_name(arm->edbo, curbone->name, NULL);
 				BLI_ghash_insert(afd.names_map, BLI_strdup(pchan->name), curbone->name);
 				
 				/* Transform the bone */
@@ -370,7 +360,7 @@ int join_armature_exec(bContext *C, wmOperator *op)
 			}
 			
 			/* Fix all the drivers (and animation data) */
-			BKE_animdata_main_cb(bmain, joined_armature_fix_animdata_cb, &afd);
+			BKE_fcurves_main_cb(bmain, joined_armature_fix_animdata_cb, &afd);
 			BLI_ghash_free(afd.names_map, MEM_freeN, NULL);
 			
 			/* Only copy over animdata now, after all the remapping has been done, 
@@ -535,7 +525,7 @@ static void separate_armature_bones(Object *ob, short sel)
 	/* go through pose-channels, checking if a bone should be removed */
 	for (pchan = ob->pose->chanbase.first; pchan; pchan = pchann) {
 		pchann = pchan->next;
-		curbone = ED_armature_bone_find_name(arm->edbo, pchan->name);
+		curbone = ED_armature_ebone_find_name(arm->edbo, pchan->name);
 		
 		/* check if bone needs to be removed */
 		if ( (sel && (curbone->flag & BONE_SELECTED)) ||
@@ -642,7 +632,7 @@ static int separate_armature_exec(bContext *C, wmOperator *op)
 	ED_armature_to_edit(obedit->data);
 	
 	/* parents tips remain selected when connected children are removed. */
-	ED_armature_deselect_all(obedit);
+	ED_armature_edit_deselect_all(obedit);
 
 	BKE_report(op->reports, RPT_INFO, "Separated bones");
 
@@ -762,7 +752,7 @@ static int armature_parent_set_exec(bContext *C, wmOperator *op)
 		 * - if there's no mirrored copy of actbone (i.e. actbone = "parent.C" or "parent")
 		 *   then just use actbone. Useful when doing upper arm to spine.
 		 */
-		actmirb = ED_armature_bone_get_mirrored(arm->edbo, actbone);
+		actmirb = ED_armature_ebone_get_mirrored(arm->edbo, actbone);
 		if (actmirb == NULL) 
 			actmirb = actbone;
 	}
@@ -885,7 +875,7 @@ static int armature_parent_clear_exec(bContext *C, wmOperator *op)
 	}
 	CTX_DATA_END;
 	
-	ED_armature_sync_selection(arm->edbo);
+	ED_armature_edit_sync_selection(arm->edbo);
 
 	/* note, notifier might evolve */
 	WM_event_add_notifier(C, NC_OBJECT | ND_BONE_SELECT, ob);

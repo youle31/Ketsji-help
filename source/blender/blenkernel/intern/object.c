@@ -202,12 +202,12 @@ void BKE_object_free_curve_cache(Object *ob)
 	}
 }
 
-void BKE_object_free_modifiers(Object *ob)
+void BKE_object_free_modifiers(Object *ob, const int flag)
 {
 	ModifierData *md;
 
 	while ((md = BLI_pophead(&ob->modifiers))) {
-		modifier_free(md);
+		modifier_free_ex(md, flag);
 	}
 
 	/* particle modifiers were freed, so free the particlesystems as well */
@@ -242,7 +242,7 @@ void BKE_object_modifier_hook_reset(Object *ob, HookModifierData *hmd)
 	}
 }
 
-bool BKE_object_support_modifier_type_check(Object *ob, int modifier_type)
+bool BKE_object_support_modifier_type_check(const Object *ob, int modifier_type)
 {
 	const ModifierTypeInfo *mti;
 
@@ -269,7 +269,7 @@ bool BKE_object_support_modifier_type_check(Object *ob, int modifier_type)
 void BKE_object_link_modifiers(struct Object *ob_dst, const struct Object *ob_src)
 {
 	ModifierData *md;
-	BKE_object_free_modifiers(ob_dst);
+	BKE_object_free_modifiers(ob_dst, 0);
 
 	if (!ELEM(ob_dst->type, OB_MESH, OB_CURVE, OB_SURF, OB_FONT, OB_LATTICE)) {
 		/* only objects listed above can have modifiers and linking them to objects
@@ -411,7 +411,8 @@ void BKE_object_free(Object *ob)
 {
 	BKE_animdata_free((ID *)ob, false);
 
-	BKE_object_free_modifiers(ob);
+	/* BKE_<id>_free shall never touch to ID->us. Never ever. */
+	BKE_object_free_modifiers(ob, LIB_ID_CREATE_NO_USER_REFCOUNT);
 
 	MEM_SAFE_FREE(ob->mat);
 	MEM_SAFE_FREE(ob->matbits);
@@ -469,7 +470,7 @@ void BKE_object_free(Object *ob)
 }
 
 /* actual check for internal data, not context or flags */
-bool BKE_object_is_in_editmode(Object *ob)
+bool BKE_object_is_in_editmode(const Object *ob)
 {
 	if (ob->data == NULL)
 		return false;
@@ -512,13 +513,13 @@ bool BKE_object_is_in_editmode(Object *ob)
 	return false;
 }
 
-bool BKE_object_is_in_editmode_vgroup(Object *ob)
+bool BKE_object_is_in_editmode_vgroup(const Object *ob)
 {
 	return (OB_TYPE_SUPPORT_VGROUP(ob->type) &&
 	        BKE_object_is_in_editmode(ob));
 }
 
-bool BKE_object_is_in_wpaint_select_vert(Object *ob)
+bool BKE_object_is_in_wpaint_select_vert(const Object *ob)
 {
 	if (ob->type == OB_MESH) {
 		Mesh *me = ob->data;
@@ -530,7 +531,7 @@ bool BKE_object_is_in_wpaint_select_vert(Object *ob)
 	return false;
 }
 
-bool BKE_object_exists_check(Object *obtest)
+bool BKE_object_exists_check(const Object *obtest)
 {
 	Object *ob;
 	
@@ -1065,7 +1066,7 @@ static void copy_object_lod(Object *obn, const Object *ob, const int UNUSED(flag
 	obn->currentlod = (LodLevel *)obn->lodlevels.first;
 }
 
-bool BKE_object_pose_context_check(Object *ob)
+bool BKE_object_pose_context_check(const Object *ob)
 {
 	if ((ob) &&
 	    (ob->type == OB_ARMATURE) &&
@@ -1252,13 +1253,13 @@ void BKE_object_make_local(Main *bmain, Object *ob, const bool lib_local)
 }
 
 /* Returns true if the Object is from an external blend file (libdata) */
-bool BKE_object_is_libdata(Object *ob)
+bool BKE_object_is_libdata(const Object *ob)
 {
 	return (ob && ID_IS_LINKED(ob));
 }
 
 /* Returns true if the Object data is from an external blend file (libdata) */
-bool BKE_object_obdata_is_libdata(Object *ob)
+bool BKE_object_obdata_is_libdata(const Object *ob)
 {
 	/* Linked objects with local obdata are forbidden! */
 	BLI_assert(!ob || !ob->data || (ID_IS_LINKED(ob) ? ID_IS_LINKED(ob->data) : true));
@@ -2653,7 +2654,7 @@ void BKE_object_handle_update_ex(EvaluationContext *eval_ctx,
 	 * which is only in BKE_object_where_is_calc now */
 	/* XXX: should this case be OB_RECALC_OB instead? */
 	if (ob->recalc & OB_RECALC_ALL) {
-		if (G.debug & G_DEBUG_DEPSGRAPH) {
+		if (G.debug & G_DEBUG_DEPSGRAPH_EVAL) {
 			printf("recalcob %s\n", ob->id.name + 2);
 		}
 		/* Handle proxy copy for target. */
@@ -3036,7 +3037,7 @@ bool BKE_object_flag_test_recursive(const Object *ob, short flag)
 	}
 }
 
-bool BKE_object_is_child_recursive(Object *ob_parent, Object *ob_child)
+bool BKE_object_is_child_recursive(const Object *ob_parent, const Object *ob_child)
 {
 	for (ob_child = ob_child->parent; ob_child; ob_child = ob_child->parent) {
 		if (ob_child == ob_parent) {

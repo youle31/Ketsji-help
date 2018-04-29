@@ -172,7 +172,7 @@ const char *BIF_listTemplates(const bContext *UNUSED(C))
 	GHashIterator ghi;
 	const char *menu_header = IFACE_("Template %t|None %x0|");
 	char *p;
-	const size_t template_size = (BLI_ghash_size(TEMPLATES_HASH) * 32 + 30);
+	const size_t template_size = (BLI_ghash_len(TEMPLATES_HASH) * 32 + 30);
 
 	if (TEMPLATES_MENU != NULL) {
 		MEM_freeN(TEMPLATES_MENU);
@@ -1334,7 +1334,7 @@ static void sk_convertStroke(bContext *C, SK_Stroke *stk)
 				}
 
 				if (bone == NULL) {
-					bone = ED_armature_edit_bone_add(arm, "Bone");
+					bone = ED_armature_ebone_add(arm, "Bone");
 
 					copy_v3_v3(bone->head, head->p);
 					copy_v3_v3(bone->tail, pt->p);
@@ -1905,7 +1905,7 @@ static bool sk_selectStroke(bContext *C, SK_Sketch *sketch, const int mval[2], c
 	unsigned int buffer[MAXPICKBUF];
 	short hits;
 
-	view3d_set_viewcontext(C, &vc);
+	ED_view3d_viewcontext_init(C, &vc);
 
 	BLI_rcti_init_pt_radius(&rect, mval, 5);
 

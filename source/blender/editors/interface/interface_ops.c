@@ -611,7 +611,8 @@ static int reports_to_text_exec(bContext *C, wmOperator *UNUSED(op))
 	str = BKE_reports_string(reports, (G.debug & G_DEBUG) ? RPT_DEBUG : RPT_INFO);
 
 	if (str) {
-		BKE_text_write(txt, str);
+		TextUndoBuf *utxt = NULL; // FIXME
+		BKE_text_write(txt, utxt, str);
 		MEM_freeN(str);
 
 		return OPERATOR_FINISHED;
@@ -1147,7 +1148,7 @@ void ED_keymap_ui(wmKeyConfig *keyconf)
 	 * through until a suitable eyedropper for the active button is found */
 	WM_keymap_add_item(keymap, "UI_OT_eyedropper_color", EKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "UI_OT_eyedropper_colorband", EKEY, KM_PRESS, 0, 0);
-	WM_keymap_add_item(keymap, "UI_OT_eyedropper_colorband_point", EKEY, KM_PRESS , KM_ALT, 0);
+	WM_keymap_add_item(keymap, "UI_OT_eyedropper_colorband_point", EKEY, KM_PRESS, KM_ALT, 0);
 	WM_keymap_add_item(keymap, "UI_OT_eyedropper_id", EKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "UI_OT_eyedropper_depth", EKEY, KM_PRESS, 0, 0);
 

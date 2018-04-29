@@ -121,7 +121,7 @@ static int apply_armature_pose2bones_exec(bContext *C, wmOperator *op)
 	pose = ob->pose;
 	
 	for (pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
-		curbone = ED_armature_bone_find_name(arm->edbo, pchan->name);
+		curbone = ED_armature_ebone_find_name(arm->edbo, pchan->name);
 		
 		/* simply copy the head/tail values from pchan over to curbone */
 		copy_v3_v3(curbone->head, pchan->pose_head);
@@ -149,6 +149,28 @@ static int apply_armature_pose2bones_exec(bContext *C, wmOperator *op)
 			
 			/* just use this euler-y as new roll value */
 			curbone->roll = eul[1];
+		}
+		
+		/* combine pose and rest values for bendy bone settings,
+		 * then clear the pchan values (so we don't get a double-up)
+		 */
+		if (pchan->bone->segments > 1) {
+			curbone->curveInX += pchan->curveInX;
+			curbone->curveInY += pchan->curveInY;
+			curbone->curveOutX += pchan->curveOutX;
+			curbone->curveOutY += pchan->curveOutY;
+			curbone->roll1 += pchan->roll1;
+			curbone->roll2 += pchan->roll2;
+			curbone->ease1 += pchan->ease1;
+			curbone->ease2 += pchan->ease2;
+			curbone->scaleIn += pchan->scaleIn;
+			curbone->scaleOut += pchan->scaleOut;
+			
+			pchan->curveInX = pchan->curveOutX = 0.0f;
+			pchan->curveInY = pchan->curveOutY = 0.0f;
+			pchan->roll1 = pchan->roll2 = 0.0f;
+			pchan->ease1 = pchan->ease2 = 0.0f;
+			pchan->scaleIn = pchan->scaleOut = 1.0f;
 		}
 		
 		/* clear transform values for pchan */
@@ -503,7 +525,7 @@ static int pose_paste_exec(bContext *C, wmOperator *op)
 		return OPERATOR_CANCELLED;
 	}
 	/* Make sure data from this file is usable for pose paste. */
-	if (BLI_listbase_count_ex(&tmp_bmain->object, 2) != 1) {
+	if (BLI_listbase_count_at_most(&tmp_bmain->object, 2) != 1) {
 		BKE_report(op->reports, RPT_ERROR, "Copy buffer is not from pose mode");
 		BKE_main_free(tmp_bmain);
 		return OPERATOR_CANCELLED;

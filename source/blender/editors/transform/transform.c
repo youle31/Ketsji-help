@@ -1694,23 +1694,13 @@ static void drawHelpline(bContext *UNUSED(C), int x, int y, void *customdata)
 	TransInfo *t = (TransInfo *)customdata;
 
 	if (t->helpline != HLP_NONE && !(t->flag & T_USES_MANIPULATOR)) {
-		float vecrot[3], cent[2];
+		float cent[2];
 		int mval[2];
 
 		mval[0] = x;
 		mval[1] = y;
 
-		copy_v3_v3(vecrot, t->center);
-		if (t->flag & T_EDIT) {
-			Object *ob = t->obedit;
-			if (ob) mul_m4_v3(ob->obmat, vecrot);
-		}
-		else if (t->flag & T_POSE) {
-			Object *ob = t->poseobj;
-			if (ob) mul_m4_v3(ob->obmat, vecrot);
-		}
-
-		projectFloatViewEx(t, vecrot, cent, V3D_PROJ_TEST_CLIP_ZERO);
+		projectFloatViewEx(t, t->center_global, cent, V3D_PROJ_TEST_CLIP_ZERO);
 
 		glPushMatrix();
 
@@ -1936,7 +1926,7 @@ void saveTransform(bContext *C, TransInfo *t, wmOperator *op)
 	}
 
 	// If modal, save settings back in scene if not set as operator argument
-	if (t->flag & T_MODAL) {
+	if ((t->flag & T_MODAL) || (op->flag & OP_IS_REPEAT)) {
 		/* save settings if not set in operator */
 
 		/* skip saving proportional edit if it was not actually used */
@@ -1956,10 +1946,9 @@ void saveTransform(bContext *C, TransInfo *t, wmOperator *op)
 					ts->proportional_objects = (proportional != PROP_EDIT_OFF);
 			}
 
-			if ((prop = RNA_struct_find_property(op->ptr, "proportional_size")) &&
-			    !RNA_property_is_set(op->ptr, prop))
-			{
-				ts->proportional_size = t->prop_size;
+			if ((prop = RNA_struct_find_property(op->ptr, "proportional_size"))) {
+				ts->proportional_size =
+				        RNA_property_is_set(op->ptr, prop) ? RNA_property_float_get(op->ptr, prop) : t->prop_size;
 			}
 
 			if ((prop = RNA_struct_find_property(op->ptr, "proportional_edit_falloff")) &&
@@ -5563,7 +5552,7 @@ static void slide_origdata_interp_data_vert(
 		project_plane_normalized_v3_v3v3(v_proj[1], sv->co_orig_3d, v_proj_axis);
 	}
 
-	// BM_ITER_ELEM (l, &liter, sv->v, BM_LOOPS_OF_VERT) {
+	// BM_ITER_ELEM (l, &liter, sv->v, BM_LOOPS_OF_VERT)
 	BM_iter_init(&liter, bm, BM_LOOPS_OF_VERT, sv->v);
 	l_num = liter.count;
 	loop_weights = do_loop_weight ? BLI_array_alloca(loop_weights, l_num) : NULL;
@@ -5626,12 +5615,12 @@ static void slide_origdata_interp_data_vert(
 	if (sod->layer_math_map_num) {
 		if (do_loop_weight) {
 			for (j = 0; j < sod->layer_math_map_num; j++) {
-				 BM_vert_loop_groups_data_layer_merge_weights(bm, sv->cd_loop_groups[j], sod->layer_math_map[j], loop_weights);
+				BM_vert_loop_groups_data_layer_merge_weights(bm, sv->cd_loop_groups[j], sod->layer_math_map[j], loop_weights);
 			}
 		}
 		else {
 			for (j = 0; j < sod->layer_math_map_num; j++) {
-				 BM_vert_loop_groups_data_layer_merge(bm, sv->cd_loop_groups[j], sod->layer_math_map[j]);
+				BM_vert_loop_groups_data_layer_merge(bm, sv->cd_loop_groups[j], sod->layer_math_map[j]);
 			}
 		}
 	}

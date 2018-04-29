@@ -685,6 +685,7 @@ static void widgetbase_draw(uiWidgetBase *wtb, uiWidgetColors *wcol)
 
 	/* backdrop non AA */
 	if (wtb->draw_inner) {
+		BLI_assert(wtb->totvert != 0);
 		if (wcol->shaded == 0) {
 			if (wcol->alpha_check) {
 				float inner_v_half[WIDGET_SIZE_MAX][2];
@@ -764,6 +765,7 @@ static void widgetbase_draw(uiWidgetBase *wtb, uiWidgetColors *wcol)
 	
 	/* for each AA step */
 	if (wtb->draw_outline) {
+		BLI_assert(wtb->totvert != 0);
 		float triangle_strip[WIDGET_SIZE_MAX * 2 + 2][2]; /* + 2 because the last pair is wrapped */
 		float triangle_strip_emboss[WIDGET_SIZE_MAX * 2][2]; /* only for emboss */
 
@@ -866,9 +868,9 @@ static int ui_but_draw_menu_icon(const uiBut *but)
 
 /* icons have been standardized... and this call draws in untransformed coordinates */
 
-static void widget_draw_icon(
-        const uiBut *but, BIFIconID icon, float alpha, const rcti *rect,
-        const bool show_menu_icon)
+static void widget_draw_icon_ex(
+        const uiBut *but, BIFIconID icon, float alpha, const rcti *rect, const bool show_menu_icon,
+        const int icon_size)
 {
 	float xs = 0.0f, ys = 0.0f;
 	float aspect, height;
@@ -884,7 +886,7 @@ static void widget_draw_icon(
 	if (icon == ICON_BLANK1 && (but->flag & UI_BUT_ICON_SUBMENU) == 0) return;
 	
 	aspect = but->block->aspect / UI_DPI_FAC;
-	height = ICON_DEFAULT_HEIGHT / aspect;
+	height = icon_size / aspect;
 
 	/* calculate blend color */
 	if (ELEM(but->type, UI_BTYPE_TOGGLE, UI_BTYPE_ROW, UI_BTYPE_TOGGLE_N, UI_BTYPE_LISTROW)) {
@@ -946,6 +948,12 @@ static void widget_draw_icon(
 	}
 	
 	glDisable(GL_BLEND);
+}
+
+static void widget_draw_icon(
+        const uiBut *but, BIFIconID icon, float alpha, const rcti *rect, const bool show_menu_icon)
+{
+	widget_draw_icon_ex(but, icon, alpha, rect, show_menu_icon, ICON_DEFAULT_HEIGHT);
 }
 
 static void ui_text_clip_give_prev_off(uiBut *but, const char *str)
@@ -1553,6 +1561,7 @@ static void widget_draw_text_icon(uiFontStyle *fstyle, uiWidgetColors *wcol, uiB
 		rcti temp = *rect;
 		temp.xmin = rect->xmax - BLI_rcti_size_y(rect) - 1;
 		widget_draw_icon(but, ICON_LAYER_USED, alpha, &temp, false);
+		rect->xmax = temp.xmin;
 	}
 
 	/* If there's an icon too (made with uiDefIconTextBut) then draw the icon
@@ -2679,6 +2688,10 @@ static void widget_numbut_draw(uiWidgetColors *wcol, rcti *rect, int state, int 
 	
 	if (!emboss) {
 		round_box_edges(&wtb, roundboxalign, rect, rad);
+	}
+	else {
+		wtb.draw_inner = false;
+		wtb.draw_outline = false;
 	}
 
 	/* decoration */

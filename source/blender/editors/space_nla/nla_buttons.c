@@ -72,7 +72,7 @@ static void do_nla_region_buttons(bContext *C, void *UNUSED(arg), int UNUSED(eve
 	//Scene *scene = CTX_data_scene(C);
 #if 0
 	switch (event) {
-
+		/* pass */
 	}
 #endif
 	/* default for now */
@@ -285,7 +285,9 @@ static void nla_panel_animdata(const bContext *C, Panel *pa)
 	/* Active Action Properties ------------------------------------- */
 	/* action */
 	row = uiLayoutRow(layout, true);
-	uiTemplateID(row, (bContext *)C, &adt_ptr, "action", "ACTION_OT_new", NULL, "NLA_OT_action_unlink");
+	uiTemplateID(
+	        row, (bContext *)C, &adt_ptr, "action",
+	        "ACTION_OT_new", NULL, "NLA_OT_action_unlink", UI_TEMPLATE_ID_FILTER_ALL);
 	
 	/* extrapolation */
 	row = uiLayoutRow(layout, true);

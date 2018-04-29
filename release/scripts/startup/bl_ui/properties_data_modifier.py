@@ -153,11 +153,6 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         layout.row().prop(md, "offset_type", expand=True)
 
     def BOOLEAN(self, layout, ob, md):
-        solver = md.solver
-        if not bpy.app.build_options.mod_boolean:
-            if solver == 'CARVE':
-                layout.label("Built without Carve solver")
-
         split = layout.split()
 
         col = split.column()
@@ -168,15 +163,10 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         col.label(text="Object:")
         col.prop(md, "object", text="")
 
-        split = layout.split()
-        split.column().label(text="Solver:")
-        split.column().prop(md, "solver", text="")
+        layout.prop(md, "double_threshold")
 
-        if solver == 'BMESH':
-            layout.prop(md, "double_threshold")
-
-            if bpy.app.debug:
-                layout.prop(md, "debug_options")
+        if bpy.app.debug:
+            layout.prop(md, "debug_options")
 
 
     def BUILD(self, layout, ob, md):
@@ -721,11 +711,15 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
 
     def PARTICLE_INSTANCE(self, layout, ob, md):
         layout.prop(md, "object")
-        layout.prop(md, "particle_system_index", text="Particle System")
+        if md.object:
+            layout.prop_search(md, "particle_system", md.object, "particle_systems", text="Particle System")
+        else:
+            layout.prop(md, "particle_system_index", text="Particle System")
 
         split = layout.split()
         col = split.column()
         col.label(text="Create From:")
+        layout.prop(md, "space", text="")
         col.prop(md, "use_normal")
         col.prop(md, "use_children")
         col.prop(md, "use_size")
@@ -735,6 +729,10 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         col.prop(md, "show_alive")
         col.prop(md, "show_unborn")
         col.prop(md, "show_dead")
+
+        row = layout.row(align=True)
+        row.prop(md, "particle_amount", text="Amount")
+        row.prop(md, "particle_offset", text="Offset")
 
         layout.separator()
 
@@ -747,8 +745,16 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         col.prop(md, "use_preserve_shape")
 
         col = split.column()
-        col.prop(md, "position", slider=True)
-        col.prop(md, "random_position", text="Random", slider=True)
+        col2 = col.column(align=True)
+        col2.prop(md, "position", slider=True)
+        col2.prop(md, "random_position", text="Random", slider=True)
+        col2 = col.column(align=True)
+        col2.prop(md, "rotation", slider=True)
+        col2.prop(md, "random_rotation", text="Random", slider=True)
+
+        col = layout.column()
+        col.prop_search(md, "index_layer_name", ob.data, "vertex_colors", text="Index Layer")
+        col.prop_search(md, "value_layer_name", ob.data, "vertex_colors", text="Value Layer")
 
     def PARTICLE_SYSTEM(self, layout, ob, md):
         layout.label(text="Settings can be found inside the Particle context")
@@ -848,10 +854,18 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         col.label(text="Axis, Origin:")
         col.prop(md, "origin", text="")
 
+        col.prop(md, "deform_axis")
+
         if md.deform_method in {'TAPER', 'STRETCH', 'TWIST'}:
-            col.label(text="Lock:")
-            col.prop(md, "lock_x")
-            col.prop(md, "lock_y")
+            row = col.row(align=True)
+            row.label(text="Lock:")
+            deform_axis = md.deform_axis
+            if deform_axis != 'X':
+                row.prop(md, "lock_x")
+            if deform_axis != 'Y':
+                row.prop(md, "lock_y")
+            if deform_axis != 'Z':
+                row.prop(md, "lock_z")
 
         col = split.column()
         col.label(text="Deform:")
@@ -930,12 +944,13 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         row.prop(md, "material_offset_rim", text="Rim")
 
     def SUBSURF(self, layout, ob, md):
+        from bpy import context
         layout.row().prop(md, "subdivision_type", expand=True)
 
         split = layout.split()
         col = split.column()
 
-        scene = bpy.context.scene
+        scene = context.scene
         engine = scene.render.engine
         show_adaptive_options = (
             engine == 'CYCLES' and md == ob.modifiers[-1] and

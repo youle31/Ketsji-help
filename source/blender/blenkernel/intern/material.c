@@ -261,6 +261,10 @@ void BKE_material_copy_data(Main *bmain, Material *ma_dst, const Material *ma_sr
 	}
 	BLI_listbase_clear(&ma_dst->gpumaterialinstancing);
 
+	if (ma_src->texpaintslot != NULL) {
+		ma_dst->texpaintslot = MEM_dupallocN(ma_src->texpaintslot);
+	}
+
 	BLI_listbase_clear(&ma_dst->gpumaterial);
 }
 
@@ -272,7 +276,7 @@ Material *BKE_material_copy(Main *bmain, const Material *ma)
 }
 
 /* XXX (see above) material copy without adding to main dbase */
-Material *localize_material(Material *ma)
+Material *BKE_material_localize(Material *ma)
 {
 	/* TODO replace with something like
 	 * 	Material *ma_copy;
@@ -1213,7 +1217,6 @@ void material_drivers_update(Scene *scene, Material *ma, float ctime)
 bool BKE_object_material_slot_remove(Object *ob)
 {
 	Material *mao, ***matarar;
-	Object *obt;
 	short *totcolp;
 	short a, actcol;
 	
@@ -1261,11 +1264,13 @@ bool BKE_object_material_slot_remove(Object *ob)
 	}
 	
 	actcol = ob->actcol;
-	obt = G.main->object.first;
-	while (obt) {
-	
+
+	for (Object *obt = G.main->object.first; obt; obt = obt->id.next) {
 		if (obt->data == ob->data) {
-			
+			/* Can happen when object material lists are used, see: T52953 */
+			if (actcol > obt->totcol) {
+				continue;
+			}
 			/* WATCH IT: do not use actcol from ob or from obt (can become zero) */
 			mao = obt->mat[actcol - 1];
 			if (mao)
@@ -1285,7 +1290,6 @@ bool BKE_object_material_slot_remove(Object *ob)
 				obt->matbits = NULL;
 			}
 		}
-		obt = obt->id.next;
 	}
 
 	/* check indices from mesh */

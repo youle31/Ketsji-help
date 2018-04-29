@@ -34,7 +34,7 @@
 #include "DNA_mesh_types.h"
 #include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
-#include "DNA_object_force.h"
+#include "DNA_object_force_types.h"
 #include "DNA_scene_types.h"
 
 #include "MEM_guardedalloc.h"
@@ -1155,6 +1155,43 @@ static void rna_MeshSequenceCache_object_path_update(Main *bmain, Scene *scene, 
 	rna_Modifier_update(bmain, scene, ptr);
 }
 
+static int rna_ParticleInstanceModifier_particle_system_poll(PointerRNA *ptr, const PointerRNA value)
+{
+	ParticleInstanceModifierData *psmd = ptr->data;
+	ParticleSystem *psys = value.data;
+
+	if (!psmd->ob)
+		return false;
+
+	/* make sure psys is in the object */
+	return BLI_findindex(&psmd->ob->particlesystem, psys) >= 0;
+}
+
+static PointerRNA rna_ParticleInstanceModifier_particle_system_get(PointerRNA *ptr)
+{
+	ParticleInstanceModifierData *psmd = ptr->data;
+	ParticleSystem *psys;
+	PointerRNA rptr;
+
+	if (!psmd->ob)
+		return PointerRNA_NULL;
+
+	psys = BLI_findlink(&psmd->ob->particlesystem, psmd->psys - 1);
+	RNA_pointer_create((ID *)psmd->ob, &RNA_ParticleSystem, psys, &rptr);
+	return rptr;
+}
+
+static void rna_ParticleInstanceModifier_particle_system_set(PointerRNA *ptr, const PointerRNA value)
+{
+	ParticleInstanceModifierData *psmd = ptr->data;
+
+	if (!psmd->ob)
+		return;
+
+	psmd->psys = BLI_findindex(&psmd->ob->particlesystem, value.data) + 1;
+	CLAMP_MIN(psmd->psys, 1);
+}
+
 #else
 
 static PropertyRNA *rna_def_property_subdivision_common(StructRNA *srna, const char type[])
@@ -1958,12 +1995,6 @@ static void rna_def_modifier_boolean(BlenderRNA *brna)
 		{0, NULL, 0, NULL, NULL}
 	};
 
-	static const EnumPropertyItem prop_solver_items[] = {
-		{eBooleanModifierSolver_BMesh, "BMESH", 0, "BMesh", "Use the BMesh boolean solver"},
-		{eBooleanModifierSolver_Carve, "CARVE", 0, "Carve", "Use the Carve boolean solver"},
-		{0, NULL, 0, NULL, NULL}
-	};
-
 	srna = RNA_def_struct(brna, "BooleanModifier", "Modifier");
 	RNA_def_struct_ui_text(srna, "Boolean Modifier", "Boolean operations modifier");
 	RNA_def_struct_sdna(srna, "BooleanModifierData");
@@ -1978,11 +2009,6 @@ static void rna_def_modifier_boolean(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_items(prop, prop_operation_items);
 	RNA_def_property_ui_text(prop, "Operation", "");
-	RNA_def_property_update(prop, 0, "rna_Modifier_update");
-
-	prop = RNA_def_property(srna, "solver", PROP_ENUM, PROP_NONE);
-	RNA_def_property_enum_items(prop, prop_solver_items);
-	RNA_def_property_ui_text(prop, "Solver", "");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
 	prop = RNA_def_property(srna, "double_threshold", PROP_FLOAT, PROP_DISTANCE);
@@ -2666,6 +2692,12 @@ static void rna_def_modifier_particleinstance(BlenderRNA *brna)
 	StructRNA *srna;
 	PropertyRNA *prop;
 
+	static EnumPropertyItem particleinstance_space[] = {
+		{eParticleInstanceSpace_Local, "LOCAL", 0, "Local", "Use offset from the particle object in the instance object"},
+		{eParticleInstanceSpace_World, "WORLD", 0, "World", "Use world space offset in the instance object"},
+		{0, NULL, 0, NULL, NULL}
+	};
+
 	srna = RNA_def_struct(brna, "ParticleInstanceModifier", "Modifier");
 	RNA_def_struct_ui_text(srna, "ParticleInstance Modifier", "Particle system instancing modifier");
 	RNA_def_struct_sdna(srna, "ParticleInstanceModifierData");
@@ -2680,8 +2712,16 @@ static void rna_def_modifier_particleinstance(BlenderRNA *brna)
 
 	prop = RNA_def_property(srna, "particle_system_index", PROP_INT, PROP_NONE);
 	RNA_def_property_int_sdna(prop, NULL, "psys");
-	RNA_def_property_range(prop, 1, 10);
+	RNA_def_property_range(prop, 1, SHRT_MAX);
 	RNA_def_property_ui_text(prop, "Particle System Number", "");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "particle_system", PROP_POINTER, PROP_NONE);
+	RNA_def_property_struct_type(prop, "ParticleSystem");
+	RNA_def_property_pointer_funcs(prop, "rna_ParticleInstanceModifier_particle_system_get", "rna_ParticleInstanceModifier_particle_system_set",
+	                               NULL, "rna_ParticleInstanceModifier_particle_system_poll");
+	RNA_def_property_flag(prop, PROP_EDITABLE);
+	RNA_def_property_ui_text(prop, "Particle System", "");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
 	prop = RNA_def_property(srna, "axis", PROP_ENUM, PROP_NONE);
@@ -2689,7 +2729,13 @@ static void rna_def_modifier_particleinstance(BlenderRNA *brna)
 	RNA_def_property_enum_items(prop, rna_enum_axis_xyz_items);
 	RNA_def_property_ui_text(prop, "Axis", "Pole axis for rotation");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
-	
+
+	prop = RNA_def_property(srna, "space", PROP_ENUM, PROP_NONE);
+	RNA_def_property_enum_sdna(prop, NULL, "space");
+	RNA_def_property_enum_items(prop, particleinstance_space);
+	RNA_def_property_ui_text(prop, "Space", "Space to use for copying mesh data");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
 	prop = RNA_def_property(srna, "use_normal", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "flag", eParticleInstanceFlag_Parents);
 	RNA_def_property_ui_text(prop, "Normal", "Create instances from normal particles");
@@ -2740,6 +2786,40 @@ static void rna_def_modifier_particleinstance(BlenderRNA *brna)
 	RNA_def_property_float_sdna(prop, NULL, "random_position");
 	RNA_def_property_range(prop, 0.0, 1.0);
 	RNA_def_property_ui_text(prop, "Random Position", "Randomize position along path");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "rotation", PROP_FLOAT, PROP_FACTOR);
+	RNA_def_property_float_sdna(prop, NULL, "rotation");
+	RNA_def_property_range(prop, 0.0, 1.0);
+	RNA_def_property_ui_text(prop, "Rotation", "Rotation around path");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "random_rotation", PROP_FLOAT, PROP_FACTOR);
+	RNA_def_property_float_sdna(prop, NULL, "random_rotation");
+	RNA_def_property_range(prop, 0.0, 1.0);
+	RNA_def_property_ui_text(prop, "Random Rotation", "Randomize rotation around path");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "particle_amount", PROP_FLOAT, PROP_FACTOR);
+	RNA_def_property_range(prop, 0.0, 1.0);
+	RNA_def_property_ui_text(prop, "Particle Amount", "Amount of particles to use for instancing");
+	RNA_def_property_float_default(prop, 1.0f);
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "particle_offset", PROP_FLOAT, PROP_FACTOR);
+	RNA_def_property_range(prop, 0.0, 1.0);
+	RNA_def_property_ui_text(prop, "Particle Offset", "Relative offset of particles to use for instancing, to avoid overlap of multiple instances");
+	RNA_def_property_float_default(prop, 0.0f);
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "index_layer_name", PROP_STRING, PROP_NONE);
+	RNA_def_property_string_sdna(prop, NULL, "index_layer_name");
+	RNA_def_property_ui_text(prop, "Index Layer Name", "Custom data layer name for the index");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "value_layer_name", PROP_STRING, PROP_NONE);
+	RNA_def_property_string_sdna(prop, NULL, "value_layer_name");
+	RNA_def_property_ui_text(prop, "Value Layer Name", "Custom data layer name for the randomized value");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 }
 
@@ -3239,6 +3319,11 @@ static void rna_def_modifier_simpledeform(BlenderRNA *brna)
 	RNA_def_property_string_funcs(prop, NULL, NULL, "rna_SimpleDeformModifier_vgroup_name_set");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
+	prop = RNA_def_property(srna, "deform_axis", PROP_ENUM, PROP_NONE);
+	RNA_def_property_enum_items(prop, rna_enum_axis_xyz_items);
+	RNA_def_property_ui_text(prop, "Axis", "Deform around local axis");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
 	prop = RNA_def_property(srna, "origin", PROP_POINTER, PROP_NONE);
 	RNA_def_property_ui_text(prop, "Origin", "Offset the origin and orientation of the deformation");
 	RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_SELF_CHECK);
@@ -3268,12 +3353,17 @@ static void rna_def_modifier_simpledeform(BlenderRNA *brna)
 
 	prop = RNA_def_property(srna, "lock_x", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "axis", MOD_SIMPLEDEFORM_LOCK_AXIS_X);
-	RNA_def_property_ui_text(prop, "Lock X Axis", "Do not allow deformation along the X axis");
+	RNA_def_property_ui_text(prop, "X", "Do not allow deformation along the X axis");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
 	prop = RNA_def_property(srna, "lock_y", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "axis", MOD_SIMPLEDEFORM_LOCK_AXIS_Y);
-	RNA_def_property_ui_text(prop, "Lock Y Axis", "Do not allow deformation along the Y axis");
+	RNA_def_property_ui_text(prop, "Y", "Do not allow deformation along the Y axis");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	prop = RNA_def_property(srna, "lock_z", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "axis", MOD_SIMPLEDEFORM_LOCK_AXIS_Z);
+	RNA_def_property_ui_text(prop, "Z", "Do not allow deformation along the Z axis");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
 	prop = RNA_def_property(srna, "invert_vertex_group", PROP_BOOLEAN, PROP_NONE);

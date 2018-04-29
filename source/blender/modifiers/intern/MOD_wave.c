@@ -78,14 +78,6 @@ static void initData(ModifierData *md)
 	wmd->defgrp_name[0] = 0;
 }
 
-static void freeData(ModifierData *md)
-{
-	WaveModifierData *wmd = (WaveModifierData *) md;
-	if (wmd->texture) {
-		id_us_min(&wmd->texture->id);
-	}
-}
-
 static void copyData(ModifierData *md, ModifierData *target)
 {
 #if 0
@@ -127,41 +119,33 @@ static void foreachTexLink(ModifierData *md, Object *ob,
 	walk(userData, ob, md, "texture");
 }
 
-static void updateDepgraph(ModifierData *md, DagForest *forest,
-                           struct Main *UNUSED(bmain),
-                           Scene *UNUSED(scene),
-                           Object *UNUSED(ob),
-                           DagNode *obNode)
+static void updateDepgraph(ModifierData *md, const ModifierUpdateDepsgraphContext *ctx)
 {
 	WaveModifierData *wmd = (WaveModifierData *) md;
 
 	if (wmd->objectcenter) {
-		DagNode *curNode = dag_get_node(forest, wmd->objectcenter);
+		DagNode *curNode = dag_get_node(ctx->forest, wmd->objectcenter);
 
-		dag_add_relation(forest, curNode, obNode, DAG_RL_OB_DATA,
+		dag_add_relation(ctx->forest, curNode, ctx->obNode, DAG_RL_OB_DATA,
 		                 "Wave Modifier");
 	}
 
 	if (wmd->map_object) {
-		DagNode *curNode = dag_get_node(forest, wmd->map_object);
+		DagNode *curNode = dag_get_node(ctx->forest, wmd->map_object);
 
-		dag_add_relation(forest, curNode, obNode, DAG_RL_OB_DATA,
+		dag_add_relation(ctx->forest, curNode, ctx->obNode, DAG_RL_OB_DATA,
 		                 "Wave Modifer");
 	}
 }
 
-static void updateDepsgraph(ModifierData *md,
-                            struct Main *UNUSED(bmain),
-                            struct Scene *UNUSED(scene),
-                            Object *UNUSED(ob),
-                            struct DepsNodeHandle *node)
+static void updateDepsgraph(ModifierData *md, const ModifierUpdateDepsgraphContext *ctx)
 {
 	WaveModifierData *wmd = (WaveModifierData *)md;
 	if (wmd->objectcenter != NULL) {
-		DEG_add_object_relation(node, wmd->objectcenter, DEG_OB_COMP_TRANSFORM, "Wave Modifier");
+		DEG_add_object_relation(ctx->node, wmd->objectcenter, DEG_OB_COMP_TRANSFORM, "Wave Modifier");
 	}
 	if (wmd->map_object != NULL) {
-		DEG_add_object_relation(node, wmd->map_object, DEG_OB_COMP_TRANSFORM, "Wave Modifier");
+		DEG_add_object_relation(ctx->node, wmd->map_object, DEG_OB_COMP_TRANSFORM, "Wave Modifier");
 	}
 }
 
@@ -228,7 +212,7 @@ static void waveModifier_do(WaveModifierData *md,
 	}
 
 	if (wmd->texture) {
-		tex_co = MEM_mallocN(sizeof(*tex_co) * numVerts,
+		tex_co = MEM_malloc_arrayN(numVerts, sizeof(*tex_co),
 		                     "waveModifier_do tex_co");
 		get_texture_coords((MappingInfoModifierData *)wmd, ob, dm, vertexCos, tex_co, numVerts);
 
@@ -391,7 +375,7 @@ ModifierTypeInfo modifierType_Wave = {
 	/* applyModifierEM */   NULL,
 	/* initData */          initData,
 	/* requiredDataMask */  requiredDataMask,
-	/* freeData */          freeData,
+	/* freeData */          NULL,
 	/* isDisabled */        NULL,
 	/* updateDepgraph */    updateDepgraph,
 	/* updateDepsgraph */   updateDepsgraph,

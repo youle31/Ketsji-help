@@ -1443,6 +1443,11 @@ static void rna_def_operator_options_runtime(BlenderRNA *brna)
 	RNA_def_property_ui_text(prop, "Invoke", "True when invoked (even if only the execute callbacks available)");
 	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
 
+	prop = RNA_def_property(srna, "is_repeat", PROP_BOOLEAN, PROP_BOOLEAN);
+	RNA_def_property_boolean_sdna(prop, NULL, "flag", OP_IS_REPEAT);
+	RNA_def_property_ui_text(prop, "Repeat", "True when run from the redo panel");
+	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+
 	prop = RNA_def_property(srna, "use_cursor_region", PROP_BOOLEAN, PROP_BOOLEAN);
 	RNA_def_property_boolean_sdna(prop, NULL, "flag", OP_IS_MODAL_CURSOR_REGION);
 	RNA_def_property_ui_text(prop, "Focus Region", "Enable to use the region under the cursor for modal execution");
@@ -1764,7 +1769,12 @@ static void rna_def_event(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "is_tablet", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
 	RNA_def_property_boolean_funcs(prop, "rna_Event_is_tablet_get", NULL);
-	RNA_def_property_ui_text(prop, "Tablet Pressure", "The pressure of the tablet or 1.0 if no tablet present");
+	RNA_def_property_ui_text(prop, "Is Tablet", "The event has tablet data");
+
+	prop = RNA_def_property(srna, "is_mouse_absolute", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "is_motion_absolute", 1);
+	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+	RNA_def_property_ui_text(prop, "Absolute Motion", "The last motion event was an absolute input");
 
 	/* modifiers */
 	prop = RNA_def_property(srna, "shift", PROP_BOOLEAN, PROP_NONE);
@@ -1820,44 +1830,36 @@ static void rna_def_timer(BlenderRNA *brna)
 	RNA_define_verify_sdna(1); /* not in sdna */
 }
 
-static void rna_def_popupmenu(BlenderRNA *brna)
+static void rna_def_popup_menu_wrapper(
+        BlenderRNA *brna, const char *rna_type, const char *c_type, const char *layout_get_fn)
 {
 	StructRNA *srna;
 	PropertyRNA *prop;
 
-	srna = RNA_def_struct(brna, "UIPopupMenu", NULL);
-	RNA_def_struct_ui_text(srna, "PopupMenu", "");
-	RNA_def_struct_sdna(srna, "uiPopupMenu");
+	srna = RNA_def_struct(brna, rna_type, NULL);
+	/* UI name isn't visible, name same as type. */
+	RNA_def_struct_ui_text(srna, rna_type, "");
+	RNA_def_struct_sdna(srna, c_type);
 
 	RNA_define_verify_sdna(0); /* not in sdna */
 
 	/* could wrap more, for now this is enough */
 	prop = RNA_def_property(srna, "layout", PROP_POINTER, PROP_NONE);
 	RNA_def_property_struct_type(prop, "UILayout");
-	RNA_def_property_pointer_funcs(prop, "rna_PopupMenu_layout_get",
+	RNA_def_property_pointer_funcs(prop, layout_get_fn,
 	                               NULL, NULL, NULL);
 
 	RNA_define_verify_sdna(1); /* not in sdna */
 }
 
+static void rna_def_popupmenu(BlenderRNA *brna)
+{
+	rna_def_popup_menu_wrapper(brna, "UIPopupMenu", "uiPopupMenu", "rna_PopupMenu_layout_get");
+}
+
 static void rna_def_piemenu(BlenderRNA *brna)
 {
-	StructRNA *srna;
-	PropertyRNA *prop;
-
-	srna = RNA_def_struct(brna, "UIPieMenu", NULL);
-	RNA_def_struct_ui_text(srna, "PieMenu", "");
-	RNA_def_struct_sdna(srna, "uiPieMenu");
-
-	RNA_define_verify_sdna(0); /* not in sdna */
-
-	/* could wrap more, for now this is enough */
-	prop = RNA_def_property(srna, "layout", PROP_POINTER, PROP_NONE);
-	RNA_def_property_struct_type(prop, "UILayout");
-	RNA_def_property_pointer_funcs(prop, "rna_PieMenu_layout_get",
-	                               NULL, NULL, NULL);
-
-	RNA_define_verify_sdna(1); /* not in sdna */
+	rna_def_popup_menu_wrapper(brna, "UIPieMenu", "uiPieMenu", "rna_PieMenu_layout_get");
 }
 
 static void rna_def_window_stereo3d(BlenderRNA *brna)

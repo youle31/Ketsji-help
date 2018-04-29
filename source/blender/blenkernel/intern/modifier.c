@@ -136,14 +136,36 @@ ModifierData *modifier_new(int type)
 	return md;
 }
 
-void modifier_free(ModifierData *md) 
+static void modifier_free_data_id_us_cb(void *UNUSED(userData), Object *UNUSED(ob), ID **idpoin, int cb_flag)
+{
+	ID *id = *idpoin;
+	if (id != NULL && (cb_flag & IDWALK_CB_USER) != 0) {
+		id_us_min(id);
+	}
+}
+
+void modifier_free_ex(ModifierData *md, const int flag)
 {
 	const ModifierTypeInfo *mti = modifierType_getInfo(md->type);
+
+	if ((flag & LIB_ID_CREATE_NO_USER_REFCOUNT) == 0) {
+		if (mti->foreachIDLink) {
+			mti->foreachIDLink(md, NULL, modifier_free_data_id_us_cb, NULL);
+		}
+		else if (mti->foreachObjectLink) {
+			mti->foreachObjectLink(md, NULL, (ObjectWalkFunc)modifier_free_data_id_us_cb, NULL);
+		}
+	}
 
 	if (mti->freeData) mti->freeData(md);
 	if (md->error) MEM_freeN(md->error);
 
 	MEM_freeN(md);
+}
+
+void modifier_free(ModifierData *md)
+{
+	modifier_free_ex(md, 0);
 }
 
 bool modifier_unique_name(ListBase *modifiers, ModifierData *md)
@@ -434,6 +456,11 @@ bool modifiers_isParticleEnabled(Object *ob)
 	return (md && md->mode & (eModifierMode_Realtime | eModifierMode_Render));
 }
 
+/**
+ * Check whether is enabled.
+ *
+ * \param scene Current scene, may be NULL, in which case isDisabled callback of the modifier is never called.
+ */
 bool modifier_isEnabled(struct Scene *scene, ModifierData *md, int required_mode)
 {
 	const ModifierTypeInfo *mti = modifierType_getInfo(md->type);
@@ -441,7 +468,7 @@ bool modifier_isEnabled(struct Scene *scene, ModifierData *md, int required_mode
 	md->scene = scene;
 
 	if ((md->mode & required_mode) != required_mode) return false;
-	if (mti->isDisabled && mti->isDisabled(md, required_mode == eModifierMode_Render)) return false;
+	if (scene != NULL && mti->isDisabled && mti->isDisabled(md, required_mode == eModifierMode_Render)) return false;
 	if (md->mode & eModifierMode_DisableTemporary) return false;
 	if ((required_mode & eModifierMode_Editmode) && !(mti->flags & eModifierTypeFlag_SupportsEditmode)) return false;
 	
